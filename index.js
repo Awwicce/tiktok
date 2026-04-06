@@ -4,7 +4,7 @@ const { WebcastPushConnection } = require('tiktok-live-connector');
 const app = express();
 
 // --- ตั้งค่าตรงนี้ ---
-const TIKTOK_USERNAME = '@fialili55'; // ใส่ชื่อ TikTok ของคุณ (ต้องมี @)
+const TIKTOK_USERNAME = '@biwbong1276'; // ใส่ชื่อ TikTok ของคุณ (ต้องมี @)
 const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
 const UNIVERSE_ID = process.env.UNIVERSE_ID;
 // ------------------
