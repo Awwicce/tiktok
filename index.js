@@ -1,35 +1,29 @@
 const axios = require('axios');
 const { WebcastPushConnection } = require('tiktok-live-connector');
 
+// --- ตั้งค่าจาก Environment ---
 const TIKTOK_USERNAME = '@.baby_mile'; 
 const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
 const UNIVERSE_ID = process.env.UNIVERSE_ID;
 
 let tiktokLiveConnection = new WebcastPushConnection(TIKTOK_USERNAME);
-let isPausing = false; // ตัวแปรเช็คสถานะการส่งรัว
 
+// 1. ฟังก์ชันส่งข้อมูลไป Roblox
 async function sendToRoblox(payload) {
-    if (isPausing && payload.event === 'chat') return; // ถ้าส่งแชทรัวไป ให้ข้ามคอมเมนต์นี้ไปก่อน
-
     const url = `https://apis.roblox.com/messaging-service/v1/universes/${UNIVERSE_ID}/topics/TikTokGiftEvent`;
     try {
         await axios.post(url, { message: JSON.stringify(payload) }, {
             headers: { 'x-api-key': ROBLOX_API_KEY, 'Content-Type': 'application/json' }
         });
-        console.log(`✅ [Roblox] ส่ง ${payload.event} สำเร็จ`);
-        
-        // ถ้าส่งคอมเมนต์ ให้หยุดพัก 1 วินาที เพื่อไม่ให้โดนบล็อก
-        if (payload.event === 'chat') {
-            isPausing = true;
-            setTimeout(() => { isPausing = false; }, 1000); 
-        }
+        console.log(`✅ [Gift Sent] ${payload.giftName} x${payload.count} จาก ${payload.username}`);
     } catch (error) {
-        console.error('❌ [Error]:', error.message);
+        console.error('❌ [Roblox Error]:', error.message);
     }
 }
 
-// รับของขวัญ (ให้ความสำคัญสูงสุด)
+// 2. รับข้อมูล "ของขวัญ" เท่านั้น (ตัด Chat/Like ออกทั้งหมด)
 tiktokLiveConnection.on('gift', (data) => {
+    // ส่งเมื่อจบการส่งต่อเนื่อง (Streak) หรือส่งชิ้นเดียว
     if (data.streakFinished || data.repeatCount === 1) {
         sendToRoblox({
             event: "gift",
@@ -40,17 +34,31 @@ tiktokLiveConnection.on('gift', (data) => {
     }
 });
 
-// รับแชท (จำกัดความเร็ว)
-tiktokLiveConnection.on('chat', (data) => {
-    sendToRoblox({ event: "chat", username: data.nickname, comment: data.comment });
+// 3. ระบบเชื่อมต่ออัตโนมัติ (Reconnect)
+function startConnection() {
+    console.log(`⏳ กำลังเชื่อมต่อ TikTok: ${TIKTOK_USERNAME}...`);
+    tiktokLiveConnection.connect().then(state => {
+        console.info(`🚀 เชื่อมต่อสำเร็จ! (Room: ${state.roomId})`);
+    }).catch(err => {
+        console.error('❌ เชื่อมต่อไม่ได้ รอ 10 วิ...', err.message);
+        setTimeout(startConnection, 10000);
+    });
+}
+
+tiktokLiveConnection.on('disconnected', () => {
+    console.warn('⚠️ หลุด! กำลังต่อใหม่...');
+    startConnection();
 });
 
-// ระบบต่ออัตโนมัติ
-function connect() {
-    tiktokLiveConnection.connect().then(() => console.log("🚀 Connected")).catch(() => setTimeout(connect, 5000));
-}
-tiktokLiveConnection.on('disconnected', connect);
-connect();
+tiktokLiveConnection.on('error', (err) => {
+    console.error('❌ TikTok Error:', err);
+});
 
-const http = require('http');
-http.createServer((req, res) => { res.write('Running'); res.end(); }).listen(10000);
+// เริ่มทำงาน
+startConnection();
+
+// 4. กัน Render หลับ
+require('http').createServer((req, res) => {
+    res.write('TikTok Gift Only Server is Online!');
+    res.end();
+}).listen(10000);
