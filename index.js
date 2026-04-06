@@ -1,32 +1,50 @@
 const express = require('express');
 const axios = require('axios');
+const { WebcastPushConnection } = require('tiktok-live-connector');
 const app = express();
-app.use(express.json());
 
+// --- ตั้งค่าตรงนี้ ---
+const TIKTOK_USERNAME = '@youaremafav'; // ใส่ชื่อ TikTok ของคุณ (ต้องมี @)
 const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
 const UNIVERSE_ID = process.env.UNIVERSE_ID;
+// ------------------
 
-// เพิ่มส่วนนี้เข้าไปครับ เพื่อให้หน้าแรกไม่ว่างเปล่า
-app.get('/', (req, res) => {
-    res.send('<h1>Bridge is Online!</h1><p>Ready to receive TikTok data.</p>');
-});
+let tiktokConnection = new WebcastPushConnection(TIKTOK_USERNAME);
 
-app.post('/webhook', async (req, res) => {
+// ฟังก์ชันส่งข้อมูลไป Roblox
+async function sendToRoblox(payload) {
     try {
-        const data = req.body;
-        console.log("ได้รับข้อมูล:", data);
-
         await axios.post(
             `https://apis.roblox.com/messaging-service/v1/universes/${UNIVERSE_ID}/topics/TikTokEvent`,
-            { message: JSON.stringify(data) },
+            { message: JSON.stringify(payload) },
             { headers: { 'x-api-key': ROBLOX_API_KEY, 'Content-Type': 'application/json' } }
         );
-        
-        res.status(200).send("Data sent to Roblox!");
-    } catch (error) {
-        console.error("Error:", error.message);
-        res.status(500).send("Error sending to Roblox");
+        console.log(`ส่งไป Roblox แล้ว: ${payload.event} จาก ${payload.nickname}`);
+    } catch (err) {
+        console.error("ส่งไป Roblox พลาด:", err.message);
     }
+}
+
+// เชื่อมต่อ TikTok
+tiktokConnection.connect().then(state => {
+    console.info(`เชื่อมต่อกับไลฟ์ของ ${TIKTOK_USERNAME} สำเร็จ!`);
+}).catch(err => {
+    console.error("เชื่อมต่อ TikTok ไม่ได้ (อาจจะยังไม่ขึ้นไลฟ์):", err);
 });
 
+// ดักจับเหตุการณ์ต่างๆ
+tiktokConnection.on('chat', data => {
+    sendToRoblox({ event: 'chat', nickname: data.nickname, comment: data.comment });
+});
+
+tiktokConnection.on('gift', data => {
+    sendToRoblox({ event: 'gift', nickname: data.nickname, giftName: data.giftName, count: data.repeatCount });
+});
+
+tiktokConnection.on('like', data => {
+    sendToRoblox({ event: 'like', nickname: data.nickname, count: data.likeCount });
+});
+
+// ป้องกัน Render หลับ (Keep Alive)
+app.get('/', (req, res) => res.send('TikTok Bridge is Running 24/7'));
 app.listen(3000, () => console.log('Server Ready'));
