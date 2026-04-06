@@ -1,52 +1,53 @@
-const express = require('express');
 const axios = require('axios');
 const { WebcastPushConnection } = require('tiktok-live-connector');
-const app = express();
 
 // --- ตั้งค่าตรงนี้ ---
-const TIKTOK_USERNAME = '@biwbong1276'; // ใส่ชื่อ TikTok ของคุณ (ต้องมี @)
+const TIKTOK_USERNAME = '@.baby_mile'; // ชื่อ TikTok ของคุณ
 const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
 const UNIVERSE_ID = process.env.UNIVERSE_ID;
 // ------------------
 
-let tiktokConnection = new WebcastPushConnection(TIKTOK_USERNAME);
+// 1. สร้างตัวเชื่อมต่อ TikTok (ประกาศตัวแปรให้ถูกต้องตามที่ Error ฟ้องตะกี้)
+let tiktokLiveConnection = new WebcastPushConnection(TIKTOK_USERNAME);
 
-// ฟังก์ชันส่งข้อมูลไป Roblox
+// 2. ฟังก์ชันส่งข้อมูลไป Roblox
 async function sendToRoblox(payload) {
+    const url = `https://apis.roblox.com/messaging-service/v1/universes/${UNIVERSE_ID}/topics/TikTokGiftEvent`;
+    
     try {
-        await axios.post(
-            `https://apis.roblox.com/messaging-service/v1/universes/${UNIVERSE_ID}/topics/TikTokEvent`,
-            { message: JSON.stringify(payload) },
-            { headers: { 'x-api-key': ROBLOX_API_KEY, 'Content-Type': 'application/json' } }
-        );
-        console.log(`ส่งไป Roblox แล้ว: ${payload.event} จาก ${payload.nickname}`);
-    } catch (err) {
-        console.error("ส่งไป Roblox พลาด:", err.message);
+        await axios.post(url, {
+            message: JSON.stringify(payload)
+        }, {
+            headers: {
+                'x-api-key': ROBLOX_API_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+        console.log(`✅ [Roblox] ส่ง ${payload.event} จาก ${payload.username} สำเร็จ`);
+    } catch (error) {
+        if (error.response && error.response.status === 429) {
+            console.error('⚠️ [429] ส่งรัวเกินไป! (Roblox จำกัดจำนวนครั้งต่อนาที)');
+        } else {
+            console.error('❌ [Roblox Error]:', error.message);
+        }
     }
 }
 
-// เชื่อมต่อ TikTok
-tiktokConnection.connect().then(state => {
-    console.info(`เชื่อมต่อกับไลฟ์ของ ${TIKTOK_USERNAME} สำเร็จ!`);
-}).catch(err => {
-    console.error("เชื่อมต่อ TikTok ไม่ได้ (อาจจะยังไม่ขึ้นไลฟ์):", err);
-});
-
-// ดักจับเหตุการณ์ต่างๆ
-// 1. สำหรับ "ของขวัญ" (ส่งทุกชิ้น เพราะสำคัญ!)
+// 3. รับข้อมูล "ของขวัญ"
 tiktokLiveConnection.on('gift', (data) => {
-    console.log(`[Gift] จาก ${data.nickname}: ${data.giftName}`);
-    sendToRoblox({
-        event: "gift",
-        username: data.nickname,
-        giftName: data.giftName,
-        count: data.repeatCount
-    });
+    // ส่งเมื่อจบการส่งต่อเนื่อง (Streak) หรือส่งชิ้นเดียว
+    if (data.streakFinished || data.repeatCount === 1) {
+        sendToRoblox({
+            event: "gift",
+            username: data.nickname,
+            giftName: data.giftName,
+            count: data.repeatCount
+        });
+    }
 });
 
-// 2. สำหรับ "คอมเมนต์" (ส่งไปแสดงโชว์)
+// 4. รับข้อมูล "คอมเมนต์" (Chat)
 tiktokLiveConnection.on('chat', (data) => {
-    console.log(`[Chat] ${data.nickname}: ${data.comment}`);
     sendToRoblox({
         event: "chat",
         username: data.nickname,
@@ -54,13 +55,16 @@ tiktokLiveConnection.on('chat', (data) => {
     });
 });
 
-// 3. ส่วน "Like" (แนะนำให้ปิดไว้ก่อน หรือส่งแค่ตอน Like เยอะจริงๆ)
-// เพราะ Like คือตัวการหลักที่ทำให้ขึ้น Error 429 ครับ
-/*
-tiktokLiveConnection.on('like', (data) => {
-    // ปิดไว้เพื่อความเสถียรของระบบ
+// 5. เริ่มเชื่อมต่อ
+tiktokLiveConnection.connect().then(state => {
+    console.info(`🚀 เชื่อมต่อกับไลฟ์ของ ${TIKTOK_USERNAME} สำเร็จ (Room ID: ${state.roomId})`);
+}).catch(err => {
+    console.error('❌ เชื่อมต่อ TikTok ไม่ได้ (อาจจะยังไม่ขึ้นไลฟ์):', err.message);
 });
-*/
-// ป้องกัน Render หลับ (Keep Alive)
-app.get('/', (req, res) => res.send('TikTok Bridge is Running 24/7'));
-app.listen(3000, () => console.log('Server Ready'));
+
+// 6. กัน Render หลับ (Listen Port 10000)
+const http = require('http');
+http.createServer((req, res) => {
+    res.write('TikTok to Roblox Server is Online!');
+    res.end();
+}).listen(10000);
