@@ -33,18 +33,34 @@ tiktokConnection.connect().then(state => {
 });
 
 // ดักจับเหตุการณ์ต่างๆ
-tiktokConnection.on('chat', data => {
-    sendToRoblox({ event: 'chat', nickname: data.nickname, comment: data.comment });
+// 1. สำหรับ "ของขวัญ" (ส่งทุกชิ้น เพราะสำคัญ!)
+tiktokLiveConnection.on('gift', (data) => {
+    console.log(`[Gift] จาก ${data.nickname}: ${data.giftName}`);
+    sendToRoblox({
+        event: "gift",
+        username: data.nickname,
+        giftName: data.giftName,
+        count: data.repeatCount
+    });
 });
 
-tiktokConnection.on('gift', data => {
-    sendToRoblox({ event: 'gift', nickname: data.nickname, giftName: data.giftName, count: data.repeatCount });
+// 2. สำหรับ "คอมเมนต์" (ส่งไปแสดงโชว์)
+tiktokLiveConnection.on('chat', (data) => {
+    console.log(`[Chat] ${data.nickname}: ${data.comment}`);
+    sendToRoblox({
+        event: "chat",
+        username: data.nickname,
+        comment: data.comment
+    });
 });
 
-tiktokConnection.on('like', data => {
-    sendToRoblox({ event: 'like', nickname: data.nickname, count: data.likeCount });
+// 3. ส่วน "Like" (แนะนำให้ปิดไว้ก่อน หรือส่งแค่ตอน Like เยอะจริงๆ)
+// เพราะ Like คือตัวการหลักที่ทำให้ขึ้น Error 429 ครับ
+/*
+tiktokLiveConnection.on('like', (data) => {
+    // ปิดไว้เพื่อความเสถียรของระบบ
 });
-
+*/
 // ป้องกัน Render หลับ (Keep Alive)
 app.get('/', (req, res) => res.send('TikTok Bridge is Running 24/7'));
 app.listen(3000, () => console.log('Server Ready'));
