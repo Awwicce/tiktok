@@ -1,44 +1,34 @@
 const axios = require('axios');
 const { WebcastPushConnection } = require('tiktok-live-connector');
 
-// --- ตั้งค่าตรงนี้ ---
 const TIKTOK_USERNAME = '@.baby_mile'; 
 const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
 const UNIVERSE_ID = process.env.UNIVERSE_ID;
-// ------------------
 
 let tiktokLiveConnection = new WebcastPushConnection(TIKTOK_USERNAME);
+let isPausing = false; // ตัวแปรเช็คสถานะการส่งรัว
 
-// 1. ฟังก์ชันส่งข้อมูลไป Roblox
 async function sendToRoblox(payload) {
+    if (isPausing && payload.event === 'chat') return; // ถ้าส่งแชทรัวไป ให้ข้ามคอมเมนต์นี้ไปก่อน
+
     const url = `https://apis.roblox.com/messaging-service/v1/universes/${UNIVERSE_ID}/topics/TikTokGiftEvent`;
     try {
         await axios.post(url, { message: JSON.stringify(payload) }, {
             headers: { 'x-api-key': ROBLOX_API_KEY, 'Content-Type': 'application/json' }
         });
-        console.log(`✅ [Roblox] ส่ง ${payload.event} จาก ${payload.username} สำเร็จ`);
-    } catch (error) {
-        if (error.response && error.response.status === 429) {
-            console.error('⚠️ [429] Roblox รับข้อมูลไม่ทัน (ส่งรัวเกินไป)');
-        } else {
-            console.error('❌ [Roblox Error]:', error.message);
+        console.log(`✅ [Roblox] ส่ง ${payload.event} สำเร็จ`);
+        
+        // ถ้าส่งคอมเมนต์ ให้หยุดพัก 1 วินาที เพื่อไม่ให้โดนบล็อก
+        if (payload.event === 'chat') {
+            isPausing = true;
+            setTimeout(() => { isPausing = false; }, 1000); 
         }
+    } catch (error) {
+        console.error('❌ [Error]:', error.message);
     }
 }
 
-// 2. ฟังก์ชันการเชื่อมต่อ (แบบต่ออัตโนมัติ)
-function connectToTikTok() {
-    console.log(`⏳ กำลังพยายามเชื่อมต่อกับ TikTok: ${TIKTOK_USERNAME}...`);
-    
-    tiktokLiveConnection.connect().then(state => {
-        console.info(`🚀 [TikTok] เชื่อมต่อสำเร็จ! (Room ID: ${state.roomId})`);
-    }).catch(err => {
-        console.error('❌ [TikTok] เชื่อมต่อไม่ได้ (รอ 10 วิเพื่อลองใหม่):', err.message);
-        setTimeout(connectToTikTok, 10000); // ถ้าพลาดให้ลองใหม่ทุก 10 วินาที
-    });
-}
-
-// 3. ดักจับเหตุการณ์ต่างๆ
+// รับของขวัญ (ให้ความสำคัญสูงสุด)
 tiktokLiveConnection.on('gift', (data) => {
     if (data.streakFinished || data.repeatCount === 1) {
         sendToRoblox({
@@ -50,26 +40,17 @@ tiktokLiveConnection.on('gift', (data) => {
     }
 });
 
+// รับแชท (จำกัดความเร็ว)
 tiktokLiveConnection.on('chat', (data) => {
     sendToRoblox({ event: "chat", username: data.nickname, comment: data.comment });
 });
 
-// 4. ส่วนสำคัญ: ถ้าหลุดให้เชื่อมใหม่ทันที
-tiktokLiveConnection.on('disconnected', () => {
-    console.warn('⚠️ [TikTok] การเชื่อมต่อหลุด! กำลังเริ่มเชื่อมต่อใหม่...');
-    connectToTikTok();
-});
+// ระบบต่ออัตโนมัติ
+function connect() {
+    tiktokLiveConnection.connect().then(() => console.log("🚀 Connected")).catch(() => setTimeout(connect, 5000));
+}
+tiktokLiveConnection.on('disconnected', connect);
+connect();
 
-tiktokLiveConnection.on('error', (err) => {
-    console.error('❌ [TikTok Error]:', err);
-});
-
-// เริ่มทำงาน
-connectToTikTok();
-
-// 5. กัน Render หลับ
 const http = require('http');
-http.createServer((req, res) => {
-    res.write('TikTok to Roblox Server is Online!');
-    res.end();
-}).listen(10000);
+http.createServer((req, res) => { res.write('Running'); res.end(); }).listen(10000);
